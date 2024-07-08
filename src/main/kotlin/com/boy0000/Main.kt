@@ -1,13 +1,14 @@
 package com.boy0000
 
+import com.github.ajalt.mordant.animation.coroutines.animateInCoroutine
+import com.github.ajalt.mordant.animation.progress.update
 import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.terminal.Terminal
+import com.github.ajalt.mordant.widgets.progress.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.jglrxavpok.hephaistos.mca.RegionFile
-import org.jglrxavpok.hephaistos.nbt.NBT
 import org.jglrxavpok.hephaistos.nbt.NBTCompound
 import org.jglrxavpok.hephaistos.nbt.NBTReader
 import java.io.File
@@ -44,20 +45,30 @@ suspend fun main(args: Array<String>) = runBlocking {
     }
     val (scanBlocks, scanBlockEntities) = ("--blocks" in args) to ("--blockEntities" in args)
     val (scanPlayers, scanEntities) = ("--players" in args) to ("--entities" in args)
-
-    terminal.println(TextColors.yellow("Starting scanning of ${worldFolder.name}-world..."))
+    val regionFiles = Helpers.getRegionFilesInWorldFolder(worldFolder)
+    val entityRegionFiles = Helpers.getEntityRegionFilesInWorldFolder(worldFolder)
 
     val dispatcher = newFixedThreadPoolContext(threadCount, "regionFilePool")
     launch(dispatcher) {
-        val regionFiles = Helpers.getRegionFilesInWorldFolder(worldFolder)
-        val entityRegionFiles = Helpers.getEntityRegionFilesInWorldFolder(worldFolder)
-
         val semaphore = Semaphore(threadCount)
-        if (scanBlocks || scanBlockEntities) regionFiles.map { regionFile ->
-            async {
-                semaphore.withPermit { processRegionFile(regionFile, scanBlocks, scanBlockEntities) }
-            }
-        }.awaitAll()
+
+        if (scanBlocks || scanBlockEntities) {
+            val blockScanProgress = BlockScanHelpers.blockScanProgress(worldFolder)
+            launch { blockScanProgress.execute() }
+            regionFiles.mapIndexed { index, regionFile ->
+
+                async {
+                    semaphore.withPermit {
+                        blockScanProgress.update {
+                            context = regionFile.name
+                            completed = index.toLong()
+                        }
+                        processRegionFile(regionFile, scanBlocks, scanBlockEntities)
+                    }
+                }
+            }.awaitAll()
+            blockScanProgress.update(blockScanProgress.total!!)
+        }
 
         if (scanPlayers) {
             async {
@@ -70,9 +81,8 @@ suspend fun main(args: Array<String>) = runBlocking {
 }
 
 suspend fun processRegionFile(regionFile: File, scanBlocks: Boolean, scanBlockEntities: Boolean) {
-    terminal.println(TextColors.yellow("Starting scanning of ${regionFile.name}..."))
     val (x, z) = regionFile.nameWithoutExtension.split(".").let { it[1].toInt() to it[2].toInt() }
-    val region = RegionFile(RandomAccessFile(regionFile, "rw"), x, z)
+    val region = runCatching { RegionFile(RandomAccessFile(regionFile, "r"), x, z) }.onFailure { terminal.println(TextColors.red("Failed to scan ${regionFile.name}")) }.getOrNull() ?: return
     val chunkRange = (0..31).flatMap { chunkX -> (0..31).map { chunkZ -> chunkX + x * 32 to chunkZ + z * 32 } }
 
     val semaphore = Semaphore(threadCount)
@@ -86,36 +96,30 @@ suspend fun processRegionFile(regionFile: File, scanBlocks: Boolean, scanBlockEn
             }
         }.awaitAll() // Wait for all async operations to complete
     }
-
-    terminal.println(TextColors.green("Finished scanning ${regionFile.name}!"))
 }
 
-val BLOCK_BLACKLIST = setOf("minecraft:beacon")
 
-// only flag if more than x in chunk
-val BLOCK_PARTIAL_BLACKLIST = mapOf("minecraft:netherite_block" to 10)
 fun processBlocksInChunk(regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
     val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
-        .onFailure { terminal.println(TextColors.yellow(it.message!!)) }
+        .onFailure { println(it.message!!) }
         .getOrNull() ?: return
-    val sections = chunkData.getList<NBTCompound>("sections") ?: return
 
-//    val newChunkData = chunkData.kmodify {
-//        val newSections = sections.map { section ->
-//            val blockstates = section.getCompound("block_states")?.kmodify blockstates@{
-//                val palette = getList<NBTCompound>("palette")?.map { palette ->
-//                    when (palette.getString("Name")) {
-//                        "minecraft:chest" -> processNoteBlockCompound(palette, regionFile, chunkX, chunkZ)
-//                        "minecraft:tripwire" -> processTripwireCompound(palette, regionFile, chunkX, chunkZ)
-//                        //"minecraft:waxed_copper_" -> processWaxedCopperCompound(palette, modifiedRegion, chunkX, chunkZ)
-//                        else -> palette
-//                    }
-//                } ?: return@blockstates
-//            } ?: return@kmodify
-//            section.kmodify { set("block_states", blockstates) }
-//        }
-//    }
+    val sections = chunkData.getList<NBTCompound>("sections") ?: return
+    sections.forEach { section ->
+        val blockStates = section.getCompound("block_states") ?: return
+        val palette = blockStates.getList<NBTCompound>("palette")?.takeIf { it.isNotEmpty() } ?: return
+        val data = blockStates.getLongArray("data")?.copyArray() ?: return
+
+        BlockScanHelpers.findBlocks(data, palette.map { it.getString("Name") ?: "minecraft:air" })
+            .filterNot(BlockScanHelpers.Block::isAir)
+            .filter(BlockScanHelpers.Block::isBlackListed)
+            .forEach { (id, location) ->
+                terminal.println(TextColors.red("$id: ") + TextColors.yellow(location.toString()))
+            }
+    }
+
 }
+
 
 fun processBlockEntitiesInChunk(regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
 
@@ -160,62 +164,38 @@ val ITEM_GRAYLIST = mapOf(
     "minecraft:netherite_pickaxe" to 10
 ).map { it.key.toRegex() to it.value }.plus(ITEM_BLACKLIST.map { it to 1 }).toMap()
 
-suspend fun processPlayerData(worldFolder: File) {
+fun CoroutineScope.processPlayerData(worldFolder: File) {
     val playerDataInWorld = Helpers.getPlayerDataFilesInWorld(worldFolder)
-    terminal.println(TextColors.yellow("Starting scanning of PlayerData for ${worldFolder.name}..."))
+    val playerScanProgress = PlayerScanHelpers.playerScanProgress(worldFolder)
 
-    fun mergeItems(items: List<NBTCompound>): List<NBTCompound> {
-        return items.groupBy { it.getString("id") }
-            .mapNotNull { (_, itemsWithSameId) ->
-                val mergedCount = itemsWithSameId.sumOf { it.getAsInt("Count") ?: return@sumOf 0 }
-                val slots = itemsWithSameId.map { it.getAsByte("Slot") ?: 0 }
-                itemsWithSameId.firstOrNull()?.toMutableCompound()?.set("Count", NBT.Byte(mergedCount))?.set("Slot", NBT.ByteArray(*slots.toByteArray()))?.toCompound()
-            }
-    }
+    launch { playerScanProgress.execute() }
 
     val offendingPlayers = mutableMapOf<String, List<NBTCompound>>()
-    playerDataInWorld.forEach { playerdata ->
-        if (playerdata.nameWithoutExtension in PLAYER_WHITELIST) return@forEach
-        //terminal.println(TextColors.brightYellow("Scanning ${playerdata.nameWithoutExtension}..."))
+    playerDataInWorld.forEachIndexed { index, playerdata ->
+        playerScanProgress.update {
+            context = playerdata.name
+            completed = index.toLong()
+        }
+        if (playerdata.nameWithoutExtension in PLAYER_WHITELIST) return@forEachIndexed
         runCatching { NBTReader(playerdata) }.getOrNull()?.use {
             val data = it.read() as NBTCompound
             val inventory = data.getList<NBTCompound>("Inventory") ?: emptyList()
             val enderchest = data.getList<NBTCompound>("EnderItems") ?: emptyList()
 
-            fun NBTCompound.isShulker() = getString("id")?.takeIf { it.matches(".*shulker.*".toRegex()) } != null
-            fun NBTCompound.handleItemCompound() {
-                val itemId = getString("id") ?: return
-                itemId.takeIf { ITEM_BLACKLIST.any { r -> r.matches(itemId) } }
-                    ?: ITEM_GRAYLIST.entries.find { it.key.matches(itemId) && it.value <= (getAsInt("Count") ?: 0) } ?: return
-                offendingPlayers.compute(playerdata.nameWithoutExtension) { uuid: String, items: List<NBTCompound>? ->
-                    (items?.toMutableList() ?: mutableListOf()).apply {
-                        add(this@handleItemCompound)
-                    }
-                }
-            }
-
-            fun flatmapShulkerItems(items: List<NBTCompound>): List<NBTCompound> {
-                return items.map { item ->
-                    if (item.isShulker())
-                        item.getCompound("tag")?.getCompound("BlockEntityTag")?.getList("Items") ?: listOf(item)
-                    else listOf(item)
-                }.flatten()
-            }
-
-            mergeItems(flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
-                item.handleItemCompound()
+            PlayerScanHelpers.mergeItems(PlayerScanHelpers.flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
+                PlayerScanHelpers.handleItemCompound(item, offendingPlayers, playerdata)
             }
         } ?: terminal.println(TextColors.red("Failed scanning ${playerdata.nameWithoutExtension} :("))
     }
 
-
-
     offendingPlayers.forEach {
         terminal.println(TextColors.red("https://namemc.com/search?q=${it.key}: ") + "\n"
-                + TextColors.yellow(it.value.joinToString("\n") { it.toSNBT() }))
+                + TextColors.yellow(it.value.joinToString("\n") { it.toSNBT() })
+        )
     }
 
     terminal.println(TextColors.yellow("Scanned ${playerDataInWorld.size} player-files and found ${offendingPlayers.size} players with a total of ${offendingPlayers.values.flatten().size} illegal items"))
 
     terminal.println(TextColors.green("Finished scanning PlayerData for ${worldFolder.name}!"))
+    playerScanProgress.update(playerScanProgress.total!!)
 }
