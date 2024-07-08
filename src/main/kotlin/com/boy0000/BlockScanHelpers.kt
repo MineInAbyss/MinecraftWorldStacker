@@ -3,17 +3,19 @@ package com.boy0000
 import com.github.ajalt.mordant.animation.coroutines.animateInCoroutine
 import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.widgets.progress.*
+import org.jglrxavpok.hephaistos.mca.RegionFile
+import org.jglrxavpok.hephaistos.nbt.NBTCompound
 import java.io.File
 
 object BlockScanHelpers {
 
-    fun blockScanProgress(worldFolder: File) = progressBarContextLayout {
+    fun blockScanProgress(worldFolder: File, regionFiles: List<File>) = progressBarContextLayout {
         text { terminal.theme.warning("Scanning region ${terminal.theme.success(context)} in ${terminal.theme.danger(worldFolder.nameWithoutExtension)}") }
         percentage()
         progressBar(completeChar = "-", pendingChar = "-", separatorChar = "-")
         completed(style = terminal.theme.success, suffix = " Regions")
         timeRemaining(style = TextColors.magenta)
-    }.animateInCoroutine(terminal, context = "Starting...", total = Helpers.getRegionFilesInWorldFolder(worldFolder).size.toLong(), completed = 0)
+    }.animateInCoroutine(terminal, visible = true, start = true, context = "Starting...", total = regionFiles.size.toLong(), completed = 0)
 
     data class Block(val type: String, val location: Location) {
         val isAir = type == "minecraft:air"
@@ -40,7 +42,32 @@ object BlockScanHelpers {
         "copper.*"
     ).map { it.toRegex() }
 
-    fun findBlocks(dataLongArray: LongArray, palette: List<String>): List<Block> {
+    fun processBlocksInChunk(regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
+        val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
+            .onFailure { println(it.message!!) }
+            .getOrNull() ?: return
+
+        val sections = chunkData.getList<NBTCompound>("sections") ?: return
+        sections.forEach { section ->
+            val blockStates = section.getCompound("block_states") ?: return
+            val palette = blockStates.getList<NBTCompound>("palette")?.takeIf { it.isNotEmpty() } ?: return
+            val data = blockStates.getLongArray("data")?.copyArray() ?: return
+
+            BlockScanHelpers.findBlocks(data, palette.map { it.getString("Name") ?: "minecraft:air" })
+                .filterNot(BlockScanHelpers.Block::isAir)
+                .filter(BlockScanHelpers.Block::isBlackListed)
+                .forEach { (id, location) ->
+                    terminal.println(TextColors.red("$id: ") + TextColors.yellow(location.toString()))
+                }
+        }
+
+    }
+
+    fun processBlockEntitiesInChunk(regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
+
+    }
+
+    private fun findBlocks(dataLongArray: LongArray, palette: List<String>): List<Block> {
         val maxPaletteIndex = palette.size - 1
         val bitLength = maxOf(getBitLength(maxPaletteIndex), 4)
         val indices = extractIndices(dataLongArray, bitLength)

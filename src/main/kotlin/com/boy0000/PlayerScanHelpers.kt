@@ -15,7 +15,7 @@ object PlayerScanHelpers {
         progressBar(completeChar = "-", pendingChar = "-", separatorChar = "-")
         completed(style = terminal.theme.success, suffix = " Players")
         timeRemaining(style = TextColors.magenta)
-    }.animateInCoroutine(terminal, context = "Starting...", total = Helpers.getPlayerDataFilesInWorld(worldFolder).size.toLong(), completed = 0)
+    }.animateInCoroutine(terminal, visible = true, start = true, context = "Starting...", total = Helpers.getPlayerDataFilesInWorld(worldFolder).size.toLong(), completed = 0)
 
     fun mergeItems(items: List<NBTCompound>): List<NBTCompound> {
         return items.groupBy { it.getString("id") }
@@ -47,4 +47,38 @@ object PlayerScanHelpers {
             }
         }
     }
+
+    val PLAYER_WHITELIST = setOf(
+        "c6307390-acda-48f8-8584-42087ad918f4",
+        "9cc444cd-47cf-4660-96b7-17a7bfef302c",
+        "8f3aa7d8-b258-4e5f-a55b-4733f8b86a51"
+    )
+
+    val ITEM_BLACKLIST = setOf(
+        "minecraft:beacon",
+        "minecraft:totem_of_undying",
+        "minecraft:trident",
+        "minecraft:reinforced_deepslate",
+        "minecraft:wither_skeleton_skull",
+        "minecraft:dragon_egg",
+        "minecraft:dragon_head",
+        "minecraft:nether_star",
+        "minecraft:elytra",
+        "minecraft:phantom_membrane",
+        "minecraft:command_block.*",
+        "minecraft:.*command_block",
+        "minecraft:light",
+        "minecraft:.*spawn_egg",
+        "minecraft:debug_stick",
+        "minecraft:jigsaw",
+        "minecraft:structure_block",
+        "minecraft:barrier",
+        "minecraft:structure_void", "minecraft:spawner"
+    ).map { it.toRegex() }
+
+    val ITEM_GRAYLIST = mapOf(
+        "minecraft:enchanted_golden_apple" to 200,
+        "minecraft:wither_rose" to 100,
+        "minecraft:netherite_pickaxe" to 10
+    ).map { it.key.toRegex() to it.value }.plus(ITEM_BLACKLIST.map { it to 1 }).toMap()
 }
