@@ -4,9 +4,9 @@ import com.github.ajalt.mordant.rendering.*
 import com.github.ajalt.mordant.table.Borders
 import com.github.ajalt.mordant.table.Table
 import com.github.ajalt.mordant.table.table
+import com.github.ajalt.mordant.widgets.Text
 import org.jglrxavpok.hephaistos.nbt.NBTCompound
 import java.io.File
-import kotlin.math.max
 
 object Helpers {
     fun getRegionFilesInWorldFolder(worldFolder: File): List<File> {
@@ -30,11 +30,11 @@ object Helpers {
         return worldFolder.resolve("playerdata").listFiles()?.filter { it.extension == "dat" } ?: emptyList()
     }
 
-    fun resultTable(playerResult: PlayerScanHelpers.PlayerResult, regionResult: BlockScanHelpers.BlockResult): Table {
+    fun playerResultTable(worldFolder: File, playerResult: PlayerScanHelpers.PlayerResult): Table {
         return table {
             borderType = BorderType.SQUARE_DOUBLE_SECTION_SEPARATOR
             borderStyle = TextColors.rgb("#4b25b9")
-            align = TextAlign.LEFT
+            align = TextAlign.CENTER
             tableBorders = Borders.NONE
             header {
                 //
@@ -89,7 +89,6 @@ object Helpers {
                 column(4) {
                     cellBorders = Borders.LEFT
                 }
-                //rowStyles(TextStyle(), TextStyles.dim.style)
                 cellBorders = Borders.ALL
                 overflowWrap = OverflowWrap.BREAK_WORD
                 whitespace = Whitespace.PRE_WRAP
@@ -108,6 +107,76 @@ object Helpers {
                     cellBorders = Borders.ALL
                 }
             }
+            captionBottom(Text("Based on ${getPlayerDataFilesInWorld(worldFolder).size} player-files", align = TextAlign.CENTER))
+        }
+    }
+
+    fun regionResultTable(worldFolder: File, regionResult: BlockScanHelpers.BlockResult): Table {
+        return table {
+            borderType = BorderType.SQUARE_DOUBLE_SECTION_SEPARATOR
+            borderStyle = TextColors.rgb("#4b25b9")
+            align = TextAlign.CENTER
+            tableBorders = Borders.NONE
+            header {
+                //
+                row {
+                    style = TextColors.brightRed + TextStyles.bold
+                    cellBorders = Borders.NONE
+                    cells("", "","RegionData") {
+                        align = TextAlign.CENTER
+                    }
+                }
+                rowStyles(TextStyle(color = TextColors.red), TextStyle(color = TextColors.yellow), TextStyle(color = TextColors.green))
+                row {
+                    cell("") {
+                        cellBorders = Borders.NONE
+                    }
+                    cell("Blacklist") {
+                        align = TextAlign.CENTER
+                        cellBorders = Borders.BOTTOM
+                        style = TextStyle(color = TextColors.red)
+                    }
+                    cell("Failed") {
+                        align = TextAlign.CENTER
+                        cellBorders = Borders.BOTTOM
+                        style = TextStyle(color = TextColors.yellow)
+                    }
+                    cell("") {
+                        cellBorders = Borders.NONE
+                    }
+                }
+            }
+            body {
+                column(0) {
+                    cellBorders = Borders.RIGHT
+                }
+                column(1) {
+                    cellBorders = Borders.ALL
+                    style = TextColors.brightRed
+                }
+                column(2) {
+                    cellBorders = Borders.ALL
+                    style = TextColors.brightYellow
+                }
+                column(4) {
+                    cellBorders = Borders.LEFT
+                }
+                cellBorders = Borders.ALL
+                overflowWrap = OverflowWrap.BREAK_WORD
+                whitespace = Whitespace.PRE_WRAP
+
+                mutableListOf<Pair<Map.Entry<String, List<BlockScanHelpers.Block>>?, File?>>().apply {
+                    (0 until maxOf(regionResult.blackListed.size, regionResult.failedToRead.size)).forEach {
+                        add(regionResult.blackListed.entries.elementAtOrNull(it) to regionResult.failedToRead.elementAtOrNull(it))
+                    }
+                }.forEach {
+                    row("", "${it.first?.key}\n${it.first?.value?.joinToString("\n")}", it.second.toString())
+                }
+                row {
+                    cellBorders = Borders.ALL
+                }
+            }
+            captionBottom(Text("Based on ${getRegionFilesInWorldFolder(worldFolder).size} region-files", align = TextAlign.CENTER))
         }
     }
 }

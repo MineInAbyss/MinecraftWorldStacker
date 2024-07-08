@@ -9,7 +9,7 @@ import java.io.File
 
 object BlockScanHelpers {
 
-    data class BlockResult(val blackListed: MutableList<Block> = mutableListOf(), val failedToRead: MutableList<File> = mutableListOf())
+    data class BlockResult(val blackListed: MutableMap<String, MutableList<Block>> = mutableMapOf(), val failedToRead: MutableList<File> = mutableListOf())
 
     fun blockScanProgress(worldFolder: File, regionFiles: List<File>) = progressBarContextLayout {
         text { terminal.theme.warning("Scanning region ${terminal.theme.success(context)} in ${terminal.theme.danger(worldFolder.nameWithoutExtension)}") }
@@ -41,10 +41,10 @@ object BlockScanHelpers {
         "minecraft:jigsaw",
         "minecraft:heavy_core",
         "minecraft:wither_skeleton_skull",
-        "copper.*"
+        "minecraft:copper_grate"
     ).map { it.toRegex() }
 
-    fun processBlocksInChunk(blockResult: BlockResult, regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
+    fun processBlocksInChunk(blockResult: BlockResult, region: File, regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
         val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
             .onFailure { println(it.message!!) }
             .getOrNull() ?: return
@@ -56,7 +56,11 @@ object BlockScanHelpers {
             val data = blockStates.getLongArray("data")?.copyArray() ?: return
 
             findBlocks(data, palette.map { it.getString("Name") ?: "minecraft:air" })
-                .filter(Block::isBlackListed).forEach(blockResult.blackListed::add)
+                .filter(Block::isBlackListed).forEach {
+                    blockResult.blackListed.compute(region.nameWithoutExtension) { _, blocks ->
+                        (blocks ?: mutableListOf()).apply { add(it) }
+                    }
+                }
         }
 
     }
