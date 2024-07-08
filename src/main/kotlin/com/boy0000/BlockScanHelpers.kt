@@ -9,6 +9,8 @@ import java.io.File
 
 object BlockScanHelpers {
 
+    data class BlockResult(val blackListed: MutableList<Block> = mutableListOf(), val failedToRead: MutableList<File> = mutableListOf())
+
     fun blockScanProgress(worldFolder: File, regionFiles: List<File>) = progressBarContextLayout {
         text { terminal.theme.warning("Scanning region ${terminal.theme.success(context)} in ${terminal.theme.danger(worldFolder.nameWithoutExtension)}") }
         percentage()
@@ -42,7 +44,7 @@ object BlockScanHelpers {
         "copper.*"
     ).map { it.toRegex() }
 
-    fun processBlocksInChunk(regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
+    fun processBlocksInChunk(blockResult: BlockResult, regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
         val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
             .onFailure { println(it.message!!) }
             .getOrNull() ?: return
@@ -53,12 +55,8 @@ object BlockScanHelpers {
             val palette = blockStates.getList<NBTCompound>("palette")?.takeIf { it.isNotEmpty() } ?: return
             val data = blockStates.getLongArray("data")?.copyArray() ?: return
 
-            BlockScanHelpers.findBlocks(data, palette.map { it.getString("Name") ?: "minecraft:air" })
-                .filterNot(BlockScanHelpers.Block::isAir)
-                .filter(BlockScanHelpers.Block::isBlackListed)
-                .forEach { (id, location) ->
-                    terminal.println(TextColors.red("$id: ") + TextColors.yellow(location.toString()))
-                }
+            findBlocks(data, palette.map { it.getString("Name") ?: "minecraft:air" })
+                .filter(Block::isBlackListed).forEach(blockResult.blackListed::add)
         }
 
     }

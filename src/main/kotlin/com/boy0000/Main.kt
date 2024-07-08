@@ -1,16 +1,17 @@
 package com.boy0000
 
 import com.github.ajalt.mordant.animation.progress.update
-import com.github.ajalt.mordant.rendering.TextColors
+import com.github.ajalt.mordant.rendering.*
+import com.github.ajalt.mordant.table.Borders
+import com.github.ajalt.mordant.table.table
 import com.github.ajalt.mordant.terminal.Terminal
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import org.jglrxavpok.hephaistos.mca.RegionFile
 import org.jglrxavpok.hephaistos.nbt.NBTCompound
 import org.jglrxavpok.hephaistos.nbt.NBTReader
 import java.io.File
 import java.io.RandomAccessFile
+import kotlin.math.max
 
 var threadCount: Int = 2
 val terminal = Terminal()
@@ -45,11 +46,14 @@ suspend fun main(args: Array<String>) = runBlocking {
     val (scanPlayers, scanEntities) = ("--players" in args) to ("--entities" in args)
 
     val dispatcher = newFixedThreadPoolContext(threadCount, "regionFilePool")
-    if (scanPlayers) async(dispatcher) { this@runBlocking.processPlayerData(worldFolder) }
-    if (scanBlocks) async(dispatcher) { this@runBlocking.processRegionFiles(worldFolder) }
+    val playerResult = if (scanPlayers) async(dispatcher) { this@runBlocking.processPlayerData(worldFolder) }.await() else PlayerScanHelpers.PlayerResult()
+    val regionData = if (scanBlocks) async(dispatcher) { this@runBlocking.processRegionFiles(worldFolder) }.await() else BlockScanHelpers.BlockResult()
+
+    terminal.println(Helpers.resultTable(playerResult, regionData))
 }
 
-fun CoroutineScope.processRegionFiles(worldFolder: File) {
+fun CoroutineScope.processRegionFiles(worldFolder: File): BlockScanHelpers.BlockResult {
+    val blockResult = BlockScanHelpers.BlockResult()
     val regionFiles = Helpers.getRegionFilesInWorldFolder(worldFolder)
     val blockScanProgress = BlockScanHelpers.blockScanProgress(worldFolder, regionFiles)
 
@@ -60,53 +64,49 @@ fun CoroutineScope.processRegionFiles(worldFolder: File) {
             completed = index.toLong()
         }
         val (x, z) = regionFile.nameWithoutExtension.split(".").let { it[1].toInt() to it[2].toInt() }
-        val region = runCatching { RegionFile(RandomAccessFile(regionFile, "r"), x, z) }.onFailure {
-            terminal.println(TextColors.red("Failed to scan ${regionFile.name}"))
-        }.getOrNull() ?: return@forEachIndexed
+        val region = runCatching { RegionFile(RandomAccessFile(regionFile, "r"), x, z) }
+            .onFailure { blockResult.failedToRead += regionFile }.getOrNull() ?: return@forEachIndexed
 
         val chunkRange = (0..31).flatMap { chunkX -> (0..31).map { chunkZ -> chunkX + x * 32 to chunkZ + z * 32 } }
 
         chunkRange.map { (chunkX, chunkZ) ->
-            BlockScanHelpers.processBlocksInChunk(region, chunkX, chunkZ)
+            BlockScanHelpers.processBlocksInChunk(blockResult, region, chunkX, chunkZ)
             BlockScanHelpers.processBlockEntitiesInChunk(region, chunkX, chunkZ)
         }
     }
 
     blockScanProgress.update(blockScanProgress.total!!)
+
+    return blockResult
 }
 
-fun CoroutineScope.processPlayerData(worldFolder: File) {
+fun CoroutineScope.processPlayerData(worldFolder: File): PlayerScanHelpers.PlayerResult {
+    val playerResult = PlayerScanHelpers.PlayerResult()
     val playerDataInWorld = Helpers.getPlayerDataFilesInWorld(worldFolder)
     val playerScanProgress = PlayerScanHelpers.playerScanProgress(worldFolder)
 
     launch { playerScanProgress.execute() }
 
-    val offendingPlayers = mutableMapOf<String, List<NBTCompound>>()
     playerDataInWorld.forEachIndexed { index, playerdata ->
+        val uuid = playerdata.nameWithoutExtension
         playerScanProgress.update {
             context = playerdata.name
             completed = index.toLong()
         }
-        if (playerdata.nameWithoutExtension in PlayerScanHelpers.PLAYER_WHITELIST) return@forEachIndexed
-        runCatching { NBTReader(playerdata) }.getOrNull()?.use {
+        if (uuid in PlayerScanHelpers.PLAYER_WHITELIST) return@forEachIndexed run { playerResult.ignored += uuid }
+
+        runCatching { NBTReader(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use {
             val data = it.read() as NBTCompound
             val inventory = data.getList<NBTCompound>("Inventory") ?: emptyList()
             val enderchest = data.getList<NBTCompound>("EnderItems") ?: emptyList()
 
             PlayerScanHelpers.mergeItems(PlayerScanHelpers.flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
-                PlayerScanHelpers.handleItemCompound(item, offendingPlayers, playerdata)
+                PlayerScanHelpers.handleItemCompound(item, playerResult.blackListed, playerdata)
             }
-        } ?: terminal.println(TextColors.red("Failed scanning ${playerdata.nameWithoutExtension} :("))
+        }
     }
 
-    offendingPlayers.forEach {
-        terminal.println(TextColors.red("https://namemc.com/search?q=${it.key}: ") + "\n"
-                + TextColors.yellow(it.value.joinToString("\n") { it.toSNBT() })
-        )
-    }
-
-    terminal.println(TextColors.yellow("Scanned ${playerDataInWorld.size} player-files and found ${offendingPlayers.size} players with a total of ${offendingPlayers.values.flatten().size} illegal items"))
-
-    terminal.println(TextColors.green("Finished scanning PlayerData for ${worldFolder.name}!"))
     playerScanProgress.update(playerScanProgress.total!!)
+
+    return playerResult
 }

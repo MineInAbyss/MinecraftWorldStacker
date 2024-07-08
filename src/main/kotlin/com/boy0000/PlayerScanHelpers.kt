@@ -9,13 +9,34 @@ import java.io.File
 
 object PlayerScanHelpers {
 
+    data class PlayerResult(
+        val blackListed: MutableMap<String, List<NBTCompound>> = mutableMapOf(),
+        val failedToRead: MutableList<String> = mutableListOf(),
+        val ignored: MutableList<String> = mutableListOf()
+    )
+
     fun playerScanProgress(worldFolder: File) = progressBarContextLayout {
-        text { terminal.theme.warning("Scanning player ${terminal.theme.success(context)} in ${terminal.theme.danger(worldFolder.nameWithoutExtension)}") }
+        text {
+            terminal.theme.warning(
+                "Scanning player ${terminal.theme.success(context)} in ${
+                    terminal.theme.danger(
+                        worldFolder.nameWithoutExtension
+                    )
+                }"
+            )
+        }
         percentage()
         progressBar(completeChar = "-", pendingChar = "-", separatorChar = "-")
         completed(style = terminal.theme.success, suffix = " Players")
         timeRemaining(style = TextColors.magenta)
-    }.animateInCoroutine(terminal, visible = true, start = true, context = "Starting...", total = Helpers.getPlayerDataFilesInWorld(worldFolder).size.toLong(), completed = 0)
+    }.animateInCoroutine(
+        terminal,
+        visible = true,
+        start = true,
+        context = "Starting...",
+        total = Helpers.getPlayerDataFilesInWorld(worldFolder).size.toLong(),
+        completed = 0
+    )
 
     fun mergeItems(items: List<NBTCompound>): List<NBTCompound> {
         return items.groupBy { it.getString("id") }
@@ -36,7 +57,11 @@ object PlayerScanHelpers {
     }
 
     fun isShulker(nbt: NBTCompound) = nbt.getString("id")?.takeIf { it.matches(".*shulker.*".toRegex()) } != null
-    fun handleItemCompound(nbt: NBTCompound, offendingPlayers: MutableMap<String, List<NBTCompound>>, playerdata: File) {
+    fun handleItemCompound(
+        nbt: NBTCompound,
+        offendingPlayers: MutableMap<String, List<NBTCompound>>,
+        playerdata: File
+    ) {
         val itemId = nbt.getString("id") ?: return
         itemId.takeIf { ITEM_BLACKLIST.any { r -> r.matches(itemId) } }
             ?: ITEM_GRAYLIST.entries.find { it.key.matches(itemId) && it.value <= (nbt.getAsInt("Count") ?: 0) }
