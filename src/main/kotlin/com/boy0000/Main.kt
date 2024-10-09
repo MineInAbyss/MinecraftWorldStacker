@@ -40,26 +40,27 @@ suspend fun main(args: Array<String>) {
             terminal.println(TextColors.brightRed("$worldArg is not a valid world, stopping..."))
             return@runBlocking
         }
-        val scanBlocks = "--blocks" in args
+        val (scanBlocks, persistentLeaves) = ("--blocks" in args) to ("--persistentleaves" in args || "--leaves" in args)
         val (scanPlayers, scanEntities) = ("--players" in args) to ("--entities" in args)
 
         val dispatcher = newFixedThreadPoolContext(threadCount, "regionFilePool")
         val playerResult = if (scanPlayers) async(dispatcher) { this@runBlocking.processPlayerData(worldFolder) }.await() else null
-        val regionData = if (scanBlocks) this@runBlocking.processRegionFiles(worldFolder).await() else null
+        val regionData = this@runBlocking.processRegionFiles(worldFolder, scanBlocks, persistentLeaves).await()
 
         playerResult?.apply { terminal.println(Helpers.playerResultTable(worldFolder, this)) }
         regionData?.apply { terminal.println(Helpers.regionResultTable(worldFolder, this)) }
     }
 }
 
-fun CoroutineScope.processRegionFiles(worldFolder: File): Deferred<BlockScanHelpers.BlockResult> {
+fun CoroutineScope.processRegionFiles(worldFolder: File, scanBlocks: Boolean, persistentLeaves: Boolean): Deferred<BlockScanHelpers.BlockResult?> {
+    if (!scanBlocks && !persistentLeaves) return async { null }
     val regionFiles = Helpers.getRegionFilesInWorldFolder(worldFolder)
     val blockScanProgress = BlockScanHelpers.blockScanProgress(worldFolder, regionFiles)
 
     launch { blockScanProgress.execute() }
 
     return async {
-        val blockResult = BlockScanHelpers.BlockResult()
+        val blockResult = BlockScanHelpers.BlockResult(scanBlocks, persistentLeaves)
         regionFiles.forEachIndexed { index, regionFile ->
             blockScanProgress.update {
                 context = regionFile.name
@@ -67,7 +68,7 @@ fun CoroutineScope.processRegionFiles(worldFolder: File): Deferred<BlockScanHelp
             }
 
             val (x, z) = regionFile.nameWithoutExtension.split(".").let { it[1].toInt() to it[2].toInt() }
-            val region = runCatching { RegionFile(RandomAccessFile(regionFile, "r"), x, z) }
+            val region = runCatching { RegionFile(RandomAccessFile(regionFile, "rw"), x, z) }
                 .onFailure { blockResult.failedToRead += regionFile }.getOrNull() ?: return@forEachIndexed
 
             val chunkRange = (0..31).flatMap { chunkX -> (0..31).map { chunkZ -> chunkX + x * 32 to chunkZ + z * 32 } }

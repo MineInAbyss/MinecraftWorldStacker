@@ -4,12 +4,15 @@ import com.github.ajalt.mordant.animation.coroutines.animateInCoroutine
 import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.widgets.progress.*
 import org.jglrxavpok.hephaistos.mca.RegionFile
+import org.jglrxavpok.hephaistos.nbt.NBT
+import org.jglrxavpok.hephaistos.nbt.NBTByte
 import org.jglrxavpok.hephaistos.nbt.NBTCompound
+import org.jglrxavpok.hephaistos.nbt.NBTType
 import java.io.File
 
 object BlockScanHelpers {
 
-    data class BlockResult(val blackListed: MutableMap<String, MutableList<Block>> = mutableMapOf(), val failedToRead: MutableList<File> = mutableListOf())
+    data class BlockResult(val scanBlocks: Boolean, val persistentLeaves: Boolean, val blackListed: MutableMap<String, MutableList<Block>> = mutableMapOf(), val failedToRead: MutableList<File> = mutableListOf())
 
     fun blockScanProgress(worldFolder: File, regionFiles: List<File>) = progressBarContextLayout {
         text { terminal.theme.warning("Scanning region ${terminal.theme.success(context)} in ${terminal.theme.danger(worldFolder.nameWithoutExtension)}") }
@@ -22,6 +25,7 @@ object BlockScanHelpers {
     data class Block(val type: String, val location: Location) {
         val isAir = type == "minecraft:air"
         val isBlackListed = BLOCK_BLACKLIST.any { it.matches(type) }
+        val isLeaf = type.endsWith("leaves")
     }
     data class Location(val x: Int, val y: Int, val z: Int)
 
@@ -49,8 +53,12 @@ object BlockScanHelpers {
             .onFailure { println(it.message!!) }
             .getOrNull() ?: return
 
+
+
         val sections = chunkData.getList<NBTCompound>("sections") ?: return
-        sections.forEach { section ->
+
+        if (blockResult.scanBlocks) {
+            /*sections.forEach { section ->
             val blockStates = section.getCompound("block_states") ?: return
             val palette = blockStates.getList<NBTCompound>("palette")?.takeIf { it.isNotEmpty() } ?: return
             val data = blockStates.getLongArray("data")?.copyArray() ?: return
@@ -61,6 +69,32 @@ object BlockScanHelpers {
                         (blocks ?: mutableListOf()).apply { add(it) }
                     }
                 }
+        }*/
+        }
+
+        if (blockResult.persistentLeaves) {
+            val newChunkData = chunkData.kmodify {
+                val newSections = sections.map { section ->
+                    val blockstates = section.getCompound("block_states")?.kmodify blockstates@{
+                        val palette = getList<NBTCompound>("palette")?.map { palette ->
+                            if (palette.getString("Name")?.endsWith("leaves") == true) {
+                                palette.kmodify {
+                                    getCompound("Properties")?.kmodify {
+                                        set("persistent", NBT.Boolean(true))
+                                    }?.let { set("Properties", it) }
+                                }
+                            } else palette
+                        } ?: return@blockstates
+
+                        set("palette", NBT.List(NBTType.TAG_Compound, palette))
+                    } ?: return@kmodify
+                    section.kmodify { set("block_states", blockstates) }
+                }
+
+                set("sections", NBT.List(NBTType.TAG_Compound, newSections))
+            }
+
+            regionFile.writeColumnData(newChunkData, chunkX, chunkZ)
         }
 
     }

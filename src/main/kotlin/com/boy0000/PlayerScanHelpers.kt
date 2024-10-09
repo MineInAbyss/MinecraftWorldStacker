@@ -98,7 +98,8 @@ object PlayerScanHelpers {
         "minecraft:jigsaw",
         "minecraft:structure_block",
         "minecraft:barrier",
-        "minecraft:structure_void", "minecraft:spawner"
+        "minecraft:structure_void", "minecraft:spawner",
+        "minecraft:tadpole_bucket"
     ).map { it.toRegex() }
 
     val ITEM_GRAYLIST = mapOf(
