@@ -75,20 +75,24 @@ object BlockScanHelpers {
         if (blockResult.persistentLeaves) {
             val newChunkData = chunkData.kmodify {
                 val newSections = sections.map { section ->
-                    val blockstates = section.getCompound("block_states")?.kmodify blockstates@{
-                        val palette = getList<NBTCompound>("palette")?.map { palette ->
+                    section.getCompound("block_states")?.kmodify blockstates@{
+                        getList<NBTCompound>("palette")?.map { palette ->
                             if (palette.getString("Name")?.endsWith("leaves") == true) {
-                                palette.kmodify {
+                                palette.kmodify palette@{
                                     getCompound("Properties")?.kmodify {
-                                        set("persistent", NBT.Boolean(true))
-                                    }?.let { set("Properties", it) }
+                                        set("persistent", NBT.String("true"))
+                                    }?.also { properties ->
+                                        this@palette["Properties"] = properties
+                                    }
                                 }
                             } else palette
-                        } ?: return@blockstates
+                        }?.also { palette ->
+                            set("palette", NBT.List(NBTType.TAG_Compound, palette))
+                        }
 
-                        set("palette", NBT.List(NBTType.TAG_Compound, palette))
-                    } ?: return@kmodify
-                    section.kmodify { set("block_states", blockstates) }
+                    }?.let { blockstates ->
+                        section.kmodify { set("block_states", blockstates) }
+                    } ?: section
                 }
 
                 set("sections", NBT.List(NBTType.TAG_Compound, newSections))

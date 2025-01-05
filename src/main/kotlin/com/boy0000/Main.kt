@@ -32,7 +32,7 @@ suspend fun main(args: Array<String>) {
         }
         val args = " " + args.joinToString(" ")
         threadCount =
-            args.substringAfter(" --threadCount ", args.substringAfter(" -t ")).substringBefore(" ").toIntOrNull() ?: 2
+            args.substringAfter(" --threadCount ", args.substringAfter(" -t ")).substringBefore(" ").toIntOrNull() ?: 6
 
         val worldArg = args.substringAfter(" --world ", args.substringAfter(" -w ")).substringBefore(" ")
         val worldFolder = File(worldArg)
