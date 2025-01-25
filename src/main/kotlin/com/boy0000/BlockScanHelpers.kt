@@ -58,7 +58,7 @@ object BlockScanHelpers {
         val sections = chunkData.getList<NBTCompound>("sections") ?: return
 
         if (blockResult.scanBlocks) {
-            /*sections.forEach { section ->
+            sections.forEach { section ->
             val blockStates = section.getCompound("block_states") ?: return
             val palette = blockStates.getList<NBTCompound>("palette")?.takeIf { it.isNotEmpty() } ?: return
             val data = blockStates.getLongArray("data")?.copyArray() ?: return
@@ -69,7 +69,7 @@ object BlockScanHelpers {
                         (blocks ?: mutableListOf()).apply { add(it) }
                     }
                 }
-        }*/
+        }
         }
 
         if (blockResult.persistentLeaves) {
