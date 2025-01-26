@@ -1,8 +1,9 @@
 plugins {
     kotlin("jvm") version "2.0.0"
+    kotlin("plugin.serialization") version "2.0.0"
     java
     application
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.gradleup.shadow") version "8.3.5"
 }
 
 group = "com.boy0000"
@@ -17,6 +18,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("com.github.ajalt.mordant:mordant:2.6.0")
     implementation("com.github.ajalt.mordant:mordant-coroutines:2.6.0")
+    implementation("com.charleskorn.kaml:kaml:0.67.0")
 }
 
 application {
