@@ -75,7 +75,7 @@ fun CoroutineScope.processRegionFiles(worldFolder: File, scanBlocks: Boolean, pe
             region.use {
                 chunkRange.map { (chunkX, chunkZ) ->
                     BlockScanHelpers.processBlocksInChunk(blockResult, regionFile, region, chunkX, chunkZ)
-                    BlockScanHelpers.processBlockEntitiesInChunk(region, chunkX, chunkZ)
+                    if (blockResult.scanBlocks) BlockScanHelpers.processBlockEntitiesInChunk(region, chunkX, chunkZ)
                 }
             }
         }

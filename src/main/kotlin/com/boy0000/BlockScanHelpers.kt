@@ -49,30 +49,12 @@ object BlockScanHelpers {
     ).map { it.toRegex() }
 
     fun processBlocksInChunk(blockResult: BlockResult, region: File, regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
-        val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
-            .onFailure { println(it.message!!) }
-            .getOrNull() ?: return
-
-
-
-        val sections = chunkData.getList<NBTCompound>("sections") ?: return
-
-        if (blockResult.scanBlocks) {
-            sections.forEach { section ->
-            val blockStates = section.getCompound("block_states") ?: return
-            val palette = blockStates.getList<NBTCompound>("palette")?.takeIf { it.isNotEmpty() } ?: return
-            val data = blockStates.getLongArray("data")?.copyArray() ?: return
-
-            findBlocks(data, palette.map { it.getString("Name") ?: "minecraft:air" })
-                .filter(Block::isBlackListed).forEach {
-                    blockResult.blackListed.compute(region.nameWithoutExtension) { _, blocks ->
-                        (blocks ?: mutableListOf()).apply { add(it) }
-                    }
-                }
-        }
-        }
-
         if (blockResult.persistentLeaves) {
+            val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
+                .onFailure { println(it.message!!) }
+                .getOrNull() ?: return
+
+            val sections = chunkData.getList<NBTCompound>("sections") ?: return
             val newChunkData = chunkData.kmodify {
                 val newSections = sections.map { section ->
                     section.getCompound("block_states")?.kmodify blockstates@{
@@ -111,9 +93,15 @@ object BlockScanHelpers {
         val blockEntities = chunkData.getList<NBTCompound>("block_entities")?.takeIf { it.isNotEmpty() } ?: return
 
         chunkData["block_entities"] = NBT.List(NBTType.TAG_Compound, blockEntities.map {
-            it.getList<NBTCompound>("Items")?.map { itemCompound ->
-                NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
-            }?.let { NBT.List(NBTType.TAG_Compound, it) } ?: it
+            it.kmodify {
+                getList<NBTCompound>("Items")?.also { items ->
+                    val newItems = items.map { itemCompound ->
+                        NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
+                    }
+
+                    set("Items", NBT.List(NBTType.TAG_Compound, newItems))
+                }
+            }
         })
 
         regionFile.writeColumnData(chunkData.toCompound(), chunkX, chunkZ)
