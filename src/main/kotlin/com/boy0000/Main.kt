@@ -99,30 +99,33 @@ fun CoroutineScope.processPlayerData(worldFolder: File): PlayerScanHelpers.Playe
             context = playerdata.name
             completed = index.toLong()
         }
-        if (uuid in PlayerScanHelpers.PLAYER_WHITELIST) return@forEachIndexed run { playerResult.ignored += uuid }
+        //if (uuid in PlayerScanHelpers.PLAYER_WHITELIST) return@forEachIndexed run { playerResult.ignored += uuid }
 
-        runCatching { NBTReader(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use {
-            val data = (it.read() as NBTCompound).toMutableCompound()
-            val inventory = data.getList<NBTCompound>("Inventory") ?: emptyList()
-            val enderchest = data.getList<NBTCompound>("EnderItems") ?: emptyList()
+        val data = runCatching { NBTReader(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use {
+            (it.read() as NBTCompound).toMutableCompound()
+        } ?: return@forEachIndexed
 
-            val writer = runCatching { NBTWriter(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull() ?: return@forEachIndexed
+        val inventory = data.getList<NBTCompound>("Inventory") ?: emptyList()
+        val enderchest = data.getList<NBTCompound>("EnderItems") ?: emptyList()
 
-            data["Inventory"] = NBT.List(NBTType.TAG_Compound, inventory.map { itemCompound ->
-                NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
-            })
+        data["Inventory"] = NBT.List(NBTType.TAG_Compound, inventory.map { itemCompound ->
+            NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
+        })
 
-            data["EnderItems"] = NBT.List(NBTType.TAG_Compound, enderchest.map { itemCompound ->
-                NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
-            })
+        data["EnderItems"] = NBT.List(NBTType.TAG_Compound, enderchest.map { itemCompound ->
+            NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
+        })
 
+        runCatching { NBTWriter(playerdata.parentFile.resolve(playerdata.nameWithoutExtension.plus("2.dat"))) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use { writer ->
             // Write modified inventory content to playerdata
-            writer.writeRaw(NBTCompound(data.asMapView()))
-
-            /*PlayerScanHelpers.mergeItems(PlayerScanHelpers.flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
-                PlayerScanHelpers.handleItemCompound(item, playerResult.blackListed, playerdata)
-            }*/
+            terminal.println(data.asMapView().toString())
+            writer.writeNamed("", NBTCompound(data.asMapView()))
+            writer.close()
         }
+
+        /*PlayerScanHelpers.mergeItems(PlayerScanHelpers.flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
+            PlayerScanHelpers.handleItemCompound(item, playerResult.blackListed, playerdata)
+        }*/
     }
 
     playerScanProgress.update(playerScanProgress.total!!)
