@@ -5,8 +5,7 @@ import com.github.ajalt.mordant.rendering.*
 import com.github.ajalt.mordant.terminal.Terminal
 import kotlinx.coroutines.*
 import org.jglrxavpok.hephaistos.mca.RegionFile
-import org.jglrxavpok.hephaistos.nbt.NBTCompound
-import org.jglrxavpok.hephaistos.nbt.NBTReader
+import org.jglrxavpok.hephaistos.nbt.*
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -103,13 +102,26 @@ fun CoroutineScope.processPlayerData(worldFolder: File): PlayerScanHelpers.Playe
         if (uuid in PlayerScanHelpers.PLAYER_WHITELIST) return@forEachIndexed run { playerResult.ignored += uuid }
 
         runCatching { NBTReader(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use {
-            val data = it.read() as NBTCompound
+            val data = (it.read() as NBTCompound).toMutableCompound()
             val inventory = data.getList<NBTCompound>("Inventory") ?: emptyList()
             val enderchest = data.getList<NBTCompound>("EnderItems") ?: emptyList()
 
-            PlayerScanHelpers.mergeItems(PlayerScanHelpers.flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
+            val writer = runCatching { NBTWriter(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull() ?: return@forEachIndexed
+
+            data["Inventory"] = NBT.List(NBTType.TAG_Compound, inventory.map { itemCompound ->
+                NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
+            })
+
+            data["EnderItems"] = NBT.List(NBTType.TAG_Compound, enderchest.map { itemCompound ->
+                NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
+            })
+
+            // Write modified inventory content to playerdata
+            writer.writeRaw(NBTCompound(data.asMapView()))
+
+            /*PlayerScanHelpers.mergeItems(PlayerScanHelpers.flatmapShulkerItems(inventory.plus(enderchest))).forEach items@{ item ->
                 PlayerScanHelpers.handleItemCompound(item, playerResult.blackListed, playerdata)
-            }
+            }*/
         }
     }
 

@@ -3,8 +3,11 @@ package com.boy0000
 import com.github.ajalt.mordant.animation.coroutines.animateInCoroutine
 import com.github.ajalt.mordant.rendering.TextColors
 import com.github.ajalt.mordant.widgets.progress.*
+import org.jglrxavpok.hephaistos.nbt.CompoundEntry
 import org.jglrxavpok.hephaistos.nbt.NBT
 import org.jglrxavpok.hephaistos.nbt.NBTCompound
+import org.jglrxavpok.hephaistos.nbt.NBTType
+import org.jglrxavpok.hephaistos.nbt.mutable.MutableNBTCompound
 import java.io.File
 
 object PlayerScanHelpers {
@@ -38,6 +41,28 @@ object PlayerScanHelpers {
         completed = 0
     )
 
+    fun handleDisplayName(itemCompound: MutableNBTCompound): MutableNBTCompound {
+        val tagCompound = itemCompound.getCompound("tag")?.toMutableCompound() ?: return itemCompound
+        if (isShulker(itemCompound)) {
+            val blockEntityTag = tagCompound.getCompound("BlockEntityTag")?.toMutableCompound()
+            blockEntityTag?.getList<NBTCompound>("Items")?.map {
+                handleDisplayName(it.toMutableCompound()).toCompound()
+            }?.also {
+                tagCompound["BlockEntityTag"] = NBT.List(NBTType.TAG_Compound, it)
+            }
+        }
+
+        val displayName = tagCompound.getCompound("display")?.getString("Name") ?: return itemCompound
+        tagCompound.remove("display")
+
+        // Set tag-tag without displayname property
+        itemCompound["tag"] = NBT.Compound(tagCompound.asMapView())
+        // Set new itemname tag
+        itemCompound["components"] = NBTCompound().withEntries(mapOf("minecraft:item_name" to NBT.String(displayName)).entries.first())
+
+        return itemCompound
+    }
+
     fun mergeItems(items: List<NBTCompound>): List<NBTCompound> {
         return items.groupBy { it.getString("id") }
             .mapNotNull { (_, itemsWithSameId) ->
@@ -50,13 +75,13 @@ object PlayerScanHelpers {
 
     fun flatmapShulkerItems(items: List<NBTCompound>): List<NBTCompound> {
         return items.map { item ->
-            if (isShulker(item))
+            if (isShulker(item.toMutableCompound()))
                 item.getCompound("tag")?.getCompound("BlockEntityTag")?.getList("Items") ?: listOf(item)
             else listOf(item)
         }.flatten()
     }
 
-    fun isShulker(nbt: NBTCompound) = nbt.getString("id")?.takeIf { it.matches(".*shulker.*".toRegex()) } != null
+    fun isShulker(nbt: MutableNBTCompound) = nbt.getString("id")?.takeIf { it.matches(".*shulker.*".toRegex()) } != null
     fun handleItemCompound(
         nbt: NBTCompound,
         offendingPlayers: MutableMap<String, List<NBTCompound>>,

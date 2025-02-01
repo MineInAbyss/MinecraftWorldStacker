@@ -104,7 +104,19 @@ object BlockScanHelpers {
     }
 
     fun processBlockEntitiesInChunk(regionFile: RegionFile, chunkX: Int, chunkZ: Int) {
+        val chunkData = runCatching { regionFile.getChunkData(chunkX, chunkZ) }
+            .onFailure { println(it.message!!) }
+            .getOrNull()?.toMutableCompound() ?: return
 
+        val blockEntities = chunkData.getList<NBTCompound>("block_entities")?.takeIf { it.isNotEmpty() } ?: return
+
+        chunkData["block_entities"] = NBT.List(NBTType.TAG_Compound, blockEntities.map {
+            it.getList<NBTCompound>("Items")?.map { itemCompound ->
+                NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
+            }?.let { NBT.List(NBTType.TAG_Compound, it) } ?: it
+        })
+
+        regionFile.writeColumnData(chunkData.toCompound(), chunkX, chunkZ)
     }
 
     private fun findBlocks(dataLongArray: LongArray, palette: List<String>): List<Block> {

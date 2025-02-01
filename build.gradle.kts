@@ -17,6 +17,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("com.github.ajalt.mordant:mordant:2.6.0")
     implementation("com.github.ajalt.mordant:mordant-coroutines:2.6.0")
+    implementation("com.google.code.gson:gson:2.12.1")
 }
 
 application {
