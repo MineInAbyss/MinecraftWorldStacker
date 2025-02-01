@@ -52,6 +52,9 @@ object PlayerScanHelpers {
             }
         }
 
+        // Only migrate geary items
+        if (tagCompound.getCompound("PublicBukkitValues")?.get("geary:components") == null) return itemCompound
+
         val displayName = tagCompound.getCompound("display")?.getString("Name") ?: return itemCompound
         tagCompound.remove("display")
 

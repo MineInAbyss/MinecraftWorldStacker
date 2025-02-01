@@ -116,7 +116,7 @@ fun CoroutineScope.processPlayerData(worldFolder: File): PlayerScanHelpers.Playe
             NBT.Compound(PlayerScanHelpers.handleDisplayName(itemCompound.toMutableCompound()).asMapView())
         })
 
-        runCatching { NBTWriter(playerdata.parentFile.resolve(playerdata.nameWithoutExtension.plus("2.dat"))) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use { writer ->
+        runCatching { NBTWriter(playerdata) }.onFailure { playerResult.failedToRead += uuid }.getOrNull()?.use { writer ->
             // Write modified inventory content to playerdata
             terminal.println(data.asMapView().toString())
             writer.writeNamed("", NBTCompound(data.asMapView()))
