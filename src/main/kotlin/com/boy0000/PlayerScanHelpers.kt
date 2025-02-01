@@ -60,8 +60,8 @@ object PlayerScanHelpers {
 
         // Set tag-tag without displayname property
         itemCompound["tag"] = NBT.Compound(tagCompound.asMapView())
-        // Set new itemname tag
-        itemCompound["components"] = NBTCompound().withEntries(mapOf("minecraft:item_name" to NBT.String(displayName)).entries.first())
+        // Set new itemname tag NOT
+        //itemCompound["components"] = NBTCompound().withEntries(mapOf("minecraft:item_name" to NBT.String(displayName)).entries.first())
 
         return itemCompound
     }
