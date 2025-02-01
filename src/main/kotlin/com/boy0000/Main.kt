@@ -72,12 +72,12 @@ fun CoroutineScope.processRegionFiles(worldFolder: File, scanBlocks: Boolean, pe
 
             val chunkRange = (0..31).flatMap { chunkX -> (0..31).map { chunkZ -> chunkX + x * 32 to chunkZ + z * 32 } }
 
-            chunkRange.map { (chunkX, chunkZ) ->
-                async {
+            region.use {
+                chunkRange.map { (chunkX, chunkZ) ->
                     BlockScanHelpers.processBlocksInChunk(blockResult, regionFile, region, chunkX, chunkZ)
                     BlockScanHelpers.processBlockEntitiesInChunk(region, chunkX, chunkZ)
                 }
-            }.awaitAll()
+            }
         }
 
         blockScanProgress.update(blockScanProgress.total!!)
